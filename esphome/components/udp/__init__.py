@@ -114,7 +114,7 @@ CONFIG_SCHEMA = cv.All(
             ),
             cv.Optional(
                 CONF_LISTEN_ADDRESS, default="255.255.255.255"
-            ): cv.ipv4address_multi_broadcast,
+            ): cv.Any(cv.ipv4address_multi_broadcast, cv.ipv6address),  # Allow both IPv4 and IPv6
             cv.Optional(CONF_ADDRESSES, default=["255.255.255.255"]): cv.ensure_list(
                 cv.Any(cv.ipv4address, cv.ipv6address),  # MODIFIED: Added IPv6 address support
             ),
