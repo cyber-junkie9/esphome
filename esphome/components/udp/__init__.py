@@ -37,7 +37,7 @@ CONF_LISTEN_ADDRESS = "listen_address"
 CONF_UDP_ID = "udp_id"
 CONF_LISTEN_PORT = "listen_port"
 CONF_BROADCAST_PORT = "broadcast_port"
-CONF_ENABLE_IPV6 = "enable_ipv6"  # NEW: Added for IPv6 support
+CONF_ENABLE_IPV6 = "enable_ipv6"
 
 UDP_SCHEMA = cv.Schema(
     {
@@ -69,33 +69,29 @@ RELOCATED = {
 
 
 def _consume_udp_sockets(config: ConfigType) -> ConfigType:
-    """Register socket needs for UDP component."""
     from esphome.components import socket
 
-    # UDP uses up to 2 sockets: 1 broadcast + 1 listen
-    # Whether each is used depends on code generation, so register worst case
     socket.consume_sockets(2, "udp")(config)
     return config
 
 
-# NEW: IPv6 validation function
 def validate_ipv6_support(config):
-    """Validate IPv6 configuration for ESP32-C6 platforms."""
     if config.get(CONF_ENABLE_IPV6, False):
         if CORE.is_esp32:
             from esphome.components.esp32 import get_esp32_variant
             from esphome.components.esp32.const import (
+                VARIANT_ESP32C5,
                 VARIANT_ESP32C6,
                 VARIANT_ESP32H2,
             )
 
             variant = get_esp32_variant()
-            if variant not in [VARIANT_ESP32C6, VARIANT_ESP32H2]:
+            if variant not in [VARIANT_ESP32C5, VARIANT_ESP32C6, VARIANT_ESP32H2]:
                 raise cv.Invalid(
-                    f"IPv6 is only supported on ESP32-C6 and ESP32-H2, not on {variant}"
+                    f"IPv6 is only supported on ESP32-C5, ESP32-C6 and ESP32-H2, not on {variant}"
                 )
         else:
-            raise cv.Invalid("IPv6 is only supported on ESP32-C6 and ESP32-H2 platforms")
+            raise cv.Invalid("IPv6 is only supported on ESP32-C5, ESP32-C6 and ESP32-H2 platforms")
     return config
 
 
@@ -114,9 +110,9 @@ CONFIG_SCHEMA = cv.All(
             ),
             cv.Optional(
                 CONF_LISTEN_ADDRESS, default="255.255.255.255"
-            ): cv.Any(cv.ipv4address_multi_broadcast, cv.ipv6address),  # Allow both IPv4 and IPv6
+            ): cv.Any(cv.ipv4address_multi_broadcast, cv.ipv6address),
             cv.Optional(CONF_ADDRESSES, default=["255.255.255.255"]): cv.ensure_list(
-                cv.Any(cv.ipv4address, cv.ipv6address),  # MODIFIED: Added IPv6 address support
+                cv.Any(cv.ipv4address, cv.ipv6address),
             ),
             cv.Optional(CONF_ON_RECEIVE): automation.validate_automation(
                 {
@@ -125,11 +121,11 @@ CONFIG_SCHEMA = cv.All(
                     ),
                 }
             ),
-            cv.Optional(CONF_ENABLE_IPV6, default=False): cv.boolean,  # NEW: IPv6 enable option
+            cv.Optional(CONF_ENABLE_IPV6, default=False): cv.boolean,
         }
     ).extend(RELOCATED),
     _consume_udp_sockets,
-    validate_ipv6_support,  # NEW: IPv6 validation
+    validate_ipv6_support,
 )
 
 
@@ -172,7 +168,6 @@ async def to_code(config):
         cg.add(var.add_listener(trigger_lambda))
         cg.add(var.set_should_listen())
 
-    # NEW: IPv6 support configuration for ESP32-C6
     enable_ipv6 = config.get(CONF_ENABLE_IPV6, False)
     if enable_ipv6:
         cg.add_define("USE_UDP_IPV6")
@@ -180,7 +175,6 @@ async def to_code(config):
         if CORE.is_esp32:
             from esphome.components.esp32 import add_idf_sdkconfig_option
 
-            # Enable IPv6 in ESP-IDF LWIP stack
             add_idf_sdkconfig_option("CONFIG_LWIP_IPV6", True)
             add_idf_sdkconfig_option("CONFIG_LWIP_IPV6_AUTOCONFIG", True)
             add_idf_sdkconfig_option("CONFIG_LWIP_IPV6_NUM_ADDRESSES", 3)
