@@ -12,25 +12,32 @@ static const char *const TAG = "udp";
 void UDPComponent::setup() {
 #if defined(USE_SOCKET_IMPL_BSD_SOCKETS) || defined(USE_SOCKET_IMPL_LWIP_SOCKETS)
   for (const auto &address : this->addresses_) {
-    struct sockaddr_storage saddr {};  // CHANGED: Use sockaddr_storage for IPv4/IPv6
+    struct sockaddr_storage saddr {};
     socklen_t addr_len = sizeof(saddr);
     socket::set_sockaddr((struct sockaddr *)&saddr, addr_len, address, this->broadcast_port_);
+
+#ifdef USE_UDP_IPV6
+    if (((struct sockaddr *) &saddr)->sa_family == AF_INET6) {
+      auto *addr6 = (struct sockaddr_in6 *) &saddr;
+      if (addr6->sin6_scope_id == 0)
+        addr6->sin6_scope_id = 0;
+    }
+#endif
+
     this->sockaddrs_.push_back(saddr);
   }
 
-  // Determine socket family based on addresses
 #ifdef USE_UDP_IPV6
-  int socket_family = AF_INET6;  // Default to IPv6 if enabled
-  // Check if we have any IPv6 addresses
+  int socket_family = AF_INET6;
   bool has_ipv6 = false;
   for (const auto &address : this->addresses_) {
-    if (strchr(address, ':') != nullptr) {  // Simple IPv6 detection
+    if (strchr(address, ':') != nullptr) {
       has_ipv6 = true;
       break;
     }
   }
   if (!has_ipv6) {
-    socket_family = AF_INET;  // Fall back to IPv4 if no IPv6 addresses
+    socket_family = AF_INET;
   }
 #else
   int socket_family = AF_INET;
@@ -53,7 +60,6 @@ void UDPComponent::setup() {
 
 #ifdef USE_UDP_IPV6
     if (socket_family == AF_INET6) {
-      // For IPv6, set IPV6_V6ONLY to 0 to allow dual-stack
       int v6only = 0;
       err = this->broadcast_socket_->setsockopt(IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
       if (err != 0) {
@@ -94,7 +100,6 @@ void UDPComponent::setup() {
 
 #ifdef USE_UDP_IPV6
     if (socket_family == AF_INET6) {
-      // IPv6 binding
       struct sockaddr_in6 server {};
       server.sin6_family = AF_INET6;
       server.sin6_addr = in6addr_any;
@@ -131,7 +136,6 @@ void UDPComponent::setup() {
     } else
 #endif
     {
-      // IPv4 binding (existing code)
       struct sockaddr_in server {};
 
       server.sin_family = AF_INET;
@@ -225,7 +229,6 @@ void UDPComponent::send_packet(const uint8_t *data, size_t size) {
   for (const auto &saddr : this->sockaddrs_) {
     socklen_t addr_len;
 #ifdef USE_UDP_IPV6
-    // Determine address length based on family
     if (((struct sockaddr *)&saddr)->sa_family == AF_INET6) {
       addr_len = sizeof(struct sockaddr_in6);
     } else
