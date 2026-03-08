@@ -45,7 +45,7 @@ void UDPComponent::setup() {
 
   // set up broadcast socket
   if (this->should_broadcast_) {
-    this->broadcast_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_IP);
+    this->broadcast_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_UDP);
     if (this->broadcast_socket_ == nullptr) {
       this->status_set_error(LOG_STR("Could not create socket"));
       this->mark_failed();
@@ -78,7 +78,7 @@ void UDPComponent::setup() {
   // create listening socket if we either want to subscribe to providers, or need to listen
   // for ping key broadcasts.
   if (this->should_listen_) {
-    this->listen_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_IP);
+    this->listen_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_UDP);
     if (this->listen_socket_ == nullptr) {
       this->status_set_error(LOG_STR("Could not create socket"));
       this->mark_failed();
