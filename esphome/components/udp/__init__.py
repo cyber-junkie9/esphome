@@ -11,7 +11,7 @@ from esphome.components.packet_transport import (
     CONF_SENSORS,
 )
 import esphome.config_validation as cv
-from esphome.const import CONF_DATA, CONF_ID, CONF_PORT, CONF_TRIGGER_ID
+from esphome.const import CONF_DATA, CONF_ID, CONF_PORT, CONF_TRIGGER_ID, CONF_ENABLE_IPV6
 from esphome.core import CORE, ID
 from esphome.cpp_generator import MockObj
 from esphome.types import ConfigType
@@ -37,7 +37,6 @@ CONF_LISTEN_ADDRESS = "listen_address"
 CONF_UDP_ID = "udp_id"
 CONF_LISTEN_PORT = "listen_port"
 CONF_BROADCAST_PORT = "broadcast_port"
-CONF_ENABLE_IPV6 = "enable_ipv6"
 
 UDP_SCHEMA = cv.Schema(
     {
