@@ -12,7 +12,10 @@ bool UDPTransport::should_send() { return network::is_connected(); }
 void UDPTransport::setup() {
   PacketTransport::setup();
   if (!this->providers_.empty() || this->is_encrypted_()) {
-    this->parent_->add_listener([this](std::span<const uint8_t> data) { this->process_(data); });
+    this->parent_->add_listener([this](std::span<const uint8_t> data) {
+      std::vector<uint8_t> vec(data.begin(), data.end());
+      this->process_(vec);
+    });
   }
 }
 
