@@ -48,7 +48,7 @@ class UDPComponent : public Component {
 #if defined(USE_SOCKET_IMPL_BSD_SOCKETS) || defined(USE_SOCKET_IMPL_LWIP_SOCKETS)
   std::unique_ptr<socket::Socket> broadcast_socket_ = nullptr;
   std::unique_ptr<socket::Socket> listen_socket_ = nullptr;
-  std::vector<struct sockaddr> sockaddrs_{};
+  std::vector<struct sockaddr_storage> sockaddrs_{};
 #endif
 #ifdef USE_SOCKET_IMPL_LWIP_TCP
   std::vector<IPAddress> ipaddrs_{};
