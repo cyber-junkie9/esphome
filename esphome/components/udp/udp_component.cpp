@@ -17,7 +17,7 @@ void UDPComponent::setup() {
     socket::set_sockaddr((struct sockaddr *)&saddr, addr_len, address, this->broadcast_port_);
     this->sockaddrs_.push_back(saddr);
   }
-  
+
   // Determine socket family based on addresses
 #ifdef USE_UDP_IPV6
   int socket_family = AF_INET6;  // Default to IPv6 if enabled
@@ -50,7 +50,7 @@ void UDPComponent::setup() {
       this->status_set_warning(LOG_STR("Socket unable to set reuseaddr"));
       // we can still continue
     }
-    
+
 #ifdef USE_UDP_IPV6
     if (socket_family == AF_INET6) {
       // For IPv6, set IPV6_V6ONLY to 0 to allow dual-stack
@@ -68,7 +68,7 @@ void UDPComponent::setup() {
       }
     }
   }
-  
+
   // create listening socket if we either want to subscribe to providers, or need to listen
   // for ping key broadcasts.
   if (this->should_listen_) {
@@ -103,7 +103,7 @@ void UDPComponent::setup() {
       if (this->listen_address_.has_value()) {
         char addr_buf[network::IP_ADDRESS_BUFFER_SIZE];
         this->listen_address_.value().str_to(addr_buf);
-        
+
         // Check if it's IPv6 multicast
         if (strchr(addr_buf, ':') != nullptr) {
           struct ipv6_mreq mreq6 = {};
