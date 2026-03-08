@@ -88,7 +88,7 @@ def validate_ipv6_support(config):
                 VARIANT_ESP32C6,
                 VARIANT_ESP32H2,
             )
-            
+
             variant = get_esp32_variant()
             if variant not in [VARIANT_ESP32C6, VARIANT_ESP32H2]:
                 raise cv.Invalid(
@@ -171,15 +171,15 @@ async def to_code(config):
         )
         cg.add(var.add_listener(trigger_lambda))
         cg.add(var.set_should_listen())
-    
+
     # NEW: IPv6 support configuration for ESP32-C6
     enable_ipv6 = config.get(CONF_ENABLE_IPV6, False)
     if enable_ipv6:
         cg.add_define("USE_UDP_IPV6")
-        
-        if CORE.is_esp32 and CORE.using_esp_idf:
+
+        if CORE.is_esp32:
             from esphome.components.esp32 import add_idf_sdkconfig_option
-            
+
             # Enable IPv6 in ESP-IDF LWIP stack
             add_idf_sdkconfig_option("CONFIG_LWIP_IPV6", True)
             add_idf_sdkconfig_option("CONFIG_LWIP_IPV6_AUTOCONFIG", True)
