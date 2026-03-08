@@ -13,16 +13,22 @@ void UDPComponent::setup() {
 #if defined(USE_SOCKET_IMPL_BSD_SOCKETS) || defined(USE_SOCKET_IMPL_LWIP_SOCKETS)
   for (const auto &address : this->addresses_) {
     struct sockaddr_storage saddr {};
-    socklen_t addr_len = sizeof(saddr);
-    socket::set_sockaddr((struct sockaddr *)&saddr, addr_len, address, this->broadcast_port_);
 
 #ifdef USE_UDP_IPV6
-    if (((struct sockaddr *) &saddr)->sa_family == AF_INET6) {
+    if (strchr(address, ':') != nullptr) {
       auto *addr6 = (struct sockaddr_in6 *) &saddr;
-      if (addr6->sin6_scope_id == 0)
-        addr6->sin6_scope_id = 0;
-    }
+      addr6->sin6_family = AF_INET6;
+      addr6->sin6_port = htons(this->broadcast_port_);
+      inet_pton(AF_INET6, address, &addr6->sin6_addr);
+      addr6->sin6_scope_id = 0;
+    } else
 #endif
+    {
+      auto *addr4 = (struct sockaddr_in *) &saddr;
+      addr4->sin_family = AF_INET;
+      addr4->sin_port = htons(this->broadcast_port_);
+      inet_aton(address, &addr4->sin_addr);
+    }
 
     this->sockaddrs_.push_back(saddr);
   }
@@ -45,7 +51,7 @@ void UDPComponent::setup() {
 
   // set up broadcast socket
   if (this->should_broadcast_) {
-    this->broadcast_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_UDP);
+    this->broadcast_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_IP);
     if (this->broadcast_socket_ == nullptr) {
       this->status_set_error(LOG_STR("Could not create socket"));
       this->mark_failed();
@@ -78,7 +84,7 @@ void UDPComponent::setup() {
   // create listening socket if we either want to subscribe to providers, or need to listen
   // for ping key broadcasts.
   if (this->should_listen_) {
-    this->listen_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_UDP);
+    this->listen_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_IP);
     if (this->listen_socket_ == nullptr) {
       this->status_set_error(LOG_STR("Could not create socket"));
       this->mark_failed();
