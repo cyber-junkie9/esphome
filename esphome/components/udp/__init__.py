@@ -25,7 +25,7 @@ UDPComponent = udp_ns.class_("UDPComponent", cg.Component)
 UDPWriteAction = udp_ns.class_("UDPWriteAction", automation.Action)
 trigger_argname = "data"
 # Listener callback type (non-owning span from UDP component)
-listener_argtype = [(listener_args, trigger_argname)]
+listener_args = cg.std_span.template(cg.uint8.operator("const"))
 # Automation/trigger type (owned vector, safe for deferred actions like delay)
 trigger_args = cg.std_vector.template(cg.uint8)
 trigger_argtype = [(trigger_args, trigger_argname)]
