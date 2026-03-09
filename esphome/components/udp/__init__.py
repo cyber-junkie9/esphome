@@ -13,6 +13,7 @@ from esphome.components.packet_transport import (
 import esphome.config_validation as cv
 from esphome.const import CONF_DATA, CONF_ID, CONF_PORT, CONF_TRIGGER_ID
 from esphome.core import ID
+from esphome.cpp_generator import MockObj
 from esphome.types import ConfigType
 
 CODEOWNERS = ["@clydebarrow"]
@@ -25,7 +26,7 @@ UDPComponent = udp_ns.class_("UDPComponent", cg.Component)
 UDPWriteAction = udp_ns.class_("UDPWriteAction", automation.Action)
 trigger_argname = "data"
 # Listener callback type (non-owning span from UDP component)
-listener_args = cg.std_vector.template(cg.uint8)
+listener_args = cg.std_span.template(cg.uint8.operator("const"))
 listener_argtype = [(listener_args, trigger_argname)]
 # Automation/trigger type (owned vector, safe for deferred actions like delay)
 trigger_args = cg.std_vector.template(cg.uint8)
@@ -67,8 +68,12 @@ RELOCATED = {
 
 
 def _consume_udp_sockets(config: ConfigType) -> ConfigType:
+    """Register socket needs for UDP component."""
     from esphome.components import socket
-    socket.consume_sockets(2, "udp")(config)
+
+    # UDP uses up to 2 sockets: 1 broadcast + 1 listen
+    # Whether each is used depends on code generation, so register worst case
+    socket.consume_sockets(2, "udp", socket.SocketType.UDP)(config)
     return config
 
 
@@ -87,9 +92,9 @@ CONFIG_SCHEMA = cv.All(
             ),
             cv.Optional(
                 CONF_LISTEN_ADDRESS, default="255.255.255.255"
-            ): cv.Any(cv.ipv4address_multi_broadcast, cv.ipv6address),
+            ): cv.ipv4address_multi_broadcast,
             cv.Optional(CONF_ADDRESSES, default=["255.255.255.255"]): cv.ensure_list(
-                cv.Any(cv.ipv4address, cv.ipv6address),
+                cv.ipv4address,
             ),
             cv.Optional(CONF_ON_RECEIVE): automation.validate_automation(
                 {
@@ -131,19 +136,24 @@ async def to_code(config):
         trigger = await automation.build_automation(
             trigger_id, trigger_argtype, on_receive
         )
-        lambda_str = cg.RawExpression(
-            f"[trigger = {trigger}](std::span<const uint8_t> data) {{ "
-            f"std::vector<uint8_t> vec(data.begin(), data.end()); "
-            f"trigger->trigger(vec); "
-            f"}}"
+        trigger_lambda = await cg.process_lambda(
+            trigger.trigger(
+                cg.std_vector.template(cg.uint8)(
+                    MockObj(trigger_argname).begin(),
+                    MockObj(trigger_argname).end(),
+                )
+            ),
+            listener_argtype,
         )
-        cg.add(var.add_listener(lambda_str))
+        cg.add(var.add_listener(trigger_lambda))
         cg.add(var.set_should_listen())
 
 
 def validate_raw_data(value):
     if isinstance(value, str):
         return value.encode("utf-8")
+    if isinstance(value, str):
+        return value
     if isinstance(value, list):
         return cv.Schema([cv.hex_uint8_t])(value)
     raise cv.Invalid(
