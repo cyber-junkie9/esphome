@@ -146,10 +146,10 @@ void UDPComponent::send_packet(const uint8_t *data, size_t size) {
 #if defined(USE_SOCKET_IMPL_BSD_SOCKETS) || defined(USE_SOCKET_IMPL_LWIP_SOCKETS)
   for (const auto &saddr : this->sockaddrs_) {
     const struct sockaddr *addr = reinterpret_cast<const struct sockaddr *>(&saddr);
-    socklen_t addr_len = sizeof(struct sockaddr_in);
-    if (addr->sa_family == AF_INET6)
-      addr_len = sizeof(struct sockaddr_in6);
-    auto result = this->broadcast_socket_->sendto(data, size, 0, addr, addr_len);
+    if (addr->sa_family != AF_INET)
+      continue;
+    auto result = this->broadcast_socket_->sendto(
+        data, size, 0, addr, sizeof(struct sockaddr_in));
     if (result < 0)
       ESP_LOGW(TAG, "sendto() error %d", errno);
   }
