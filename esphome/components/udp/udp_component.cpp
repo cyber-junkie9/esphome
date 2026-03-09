@@ -88,9 +88,21 @@ void UDPComponent::setup() {
       if (listen_addr.is_multicast()) {
 #if USE_NETWORK_IPV6
         if (listen_addr.is_ip6()) {
-          // IPv6 multicast join deferred to loop() when network is ready
           char addr_buf[network::IP_ADDRESS_BUFFER_SIZE];
-          ESP_LOGD(TAG, "IPv6 multicast %s: will join when network is ready", listen_addr.str_to(addr_buf));
+          listen_addr.str_to(addr_buf);
+          struct in6_addr addr6 {};
+          if (inet_pton(AF_INET6, addr_buf, &addr6) == 1) {
+            struct ipv6_mreq mreq6 {};
+            mreq6.ipv6mr_multiaddr = addr6;
+            mreq6.ipv6mr_interface = 0;
+            err2 = this->listen_socket_->setsockopt(IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq6, sizeof(mreq6));
+            if (err2 == 0) {
+              ESP_LOGD(TAG, "Joined IPv6 multicast group: %s", addr_buf);
+            } else {
+              // Some errors are benign (already joined, etc)
+              ESP_LOGD(TAG, "IPv6 multicast group join: %s (errno %d)", addr_buf, errno);
+            }
+          }
         } else {
 #else
         {
@@ -126,34 +138,6 @@ void UDPComponent::setup() {
 }
 
 void UDPComponent::loop() {
-#if USE_NETWORK_IPV6
-  if (!this->ipv6_multicast_joined_ && this->should_listen_ && this->listen_address_.has_value()) {
-    auto listen_addr = this->listen_address_.value();
-    if (listen_addr.is_ip6() && listen_addr.is_multicast() && network::is_connected()) {
-      static uint32_t last_retry = 0;
-      uint32_t now = millis();
-      // Retry at most every 5 seconds to avoid log spam
-      if (now - last_retry >= 5000) {
-        last_retry = now;
-        char addr_buf[network::IP_ADDRESS_BUFFER_SIZE];
-        listen_addr.str_to(addr_buf);
-        struct in6_addr addr6 {};
-        if (inet_pton(AF_INET6, addr_buf, &addr6) == 1) {
-          struct ipv6_mreq mreq6 {};
-          mreq6.ipv6mr_multiaddr = addr6;
-          mreq6.ipv6mr_interface = 0;  // let the system choose the interface
-          int err = this->listen_socket_->setsockopt(IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq6, sizeof(mreq6));
-          if (err == 0) {
-            ESP_LOGD(TAG, "IPv6 multicast join successful: %s", addr_buf);
-            this->ipv6_multicast_joined_ = true;
-          } else {
-            ESP_LOGW(TAG, "IPV6_JOIN_GROUP failed (will retry): errno %d", errno);
-          }
-        }
-      }
-    }
-  }
-#endif
   if (this->should_listen_) {
     std::array<uint8_t, MAX_PACKET_SIZE> buf;
     for (;;) {
@@ -186,6 +170,9 @@ void UDPComponent::dump_config() {
     char addr_buf[network::IP_ADDRESS_BUFFER_SIZE];
     ESP_LOGCONFIG(TAG, "  Listen address: %s", this->listen_address_.value().str_to(addr_buf));
   }
+#ifdef USE_UDP_IPV6
+  ESP_LOGCONFIG(TAG, "  IPv6: Enabled");
+#endif
   ESP_LOGCONFIG(TAG,
                 "  Broadcasting: %s\n"
                 "  Listening: %s",
@@ -194,11 +181,17 @@ void UDPComponent::dump_config() {
 
 void UDPComponent::send_packet(const uint8_t *data, size_t size) {
 #if defined(USE_SOCKET_IMPL_BSD_SOCKETS) || defined(USE_SOCKET_IMPL_LWIP_SOCKETS)
-  if (this->broadcast_socket_ == nullptr)
-    return;
   for (const auto &saddr : this->sockaddrs_) {
-    auto result =
-        this->broadcast_socket_->sendto(data, size, 0, reinterpret_cast<const sockaddr *>(&saddr), sizeof(saddr));
+    socklen_t addr_len;
+#ifdef USE_UDP_IPV6
+    if (((struct sockaddr *)&saddr)->sa_family == AF_INET6) {
+      addr_len = sizeof(struct sockaddr_in6);
+    } else
+#endif
+    {
+      addr_len = sizeof(struct sockaddr_in);
+    }
+    auto result = this->broadcast_socket_->sendto(data, size, 0, (struct sockaddr *)&saddr, addr_len);
     if (result < 0)
       ESP_LOGW(TAG, "sendto() error %d", errno);
   }
