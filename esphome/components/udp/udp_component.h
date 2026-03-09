@@ -57,6 +57,10 @@ class UDPComponent : public Component {
   FixedVector<const char *> addresses_{};
 
   optional<network::IPAddress> listen_address_{};
+
+#if USE_NETWORK_IPV6
+  bool ipv6_multicast_joined_{false};
+#endif
 };
 
 }  // namespace esphome::udp
