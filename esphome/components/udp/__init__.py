@@ -138,8 +138,9 @@ async def to_code(config):
         cg.add(
             var.add_listener(
                 cg.RawExpression(
-                    f"[trigger = {trigger}]({listener_args} {trigger_argname}) {{ "
-                    f"trigger->trigger({trigger_argname}); }}"
+                    f"[trigger = {trigger}](std::span<const uint8_t> {trigger_argname}) {{ "
+                    f"std::vector<uint8_t> vec({trigger_argname}.begin(), {trigger_argname}.end()); "
+                    f"trigger->trigger(vec); }}"
                 )
             )
         )
