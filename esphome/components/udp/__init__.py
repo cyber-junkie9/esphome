@@ -136,16 +136,15 @@ async def to_code(config):
         trigger = await automation.build_automation(
             trigger_id, trigger_argtype, on_receive
         )
-        trigger_lambda = await cg.process_lambda(
-            trigger.trigger(
-                cg.std_vector.template(cg.uint8)(
-                    MockObj(trigger_argname).begin(),
-                    MockObj(trigger_argname).end(),
-                )
-            ),
-            listener_argtype,
-        )
         cg.add(var.add_listener(trigger_lambda))
+        cg.add(
+            var.add_listener(
+                cg.RawExpression(
+                    f"[trigger = {trigger}]({listener_args} {trigger_argname}) {{ "
+                    f"trigger->trigger({trigger_argname}); }}"
+                )
+            )
+        )
         cg.add(var.set_should_listen())
 
 
