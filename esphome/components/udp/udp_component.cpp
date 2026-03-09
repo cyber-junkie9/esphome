@@ -19,7 +19,10 @@ void UDPComponent::setup() {
       auto *addr6 = (struct sockaddr_in6 *) &saddr;
       addr6->sin6_family = AF_INET6;
       addr6->sin6_port = htons(this->broadcast_port_);
-      inet_pton(AF_INET6, address, &addr6->sin6_addr);
+      if (inet_pton(AF_INET6, address, &addr6->sin6_addr) != 1) {
+        ESP_LOGE(TAG, "Invalid IPv6 address: %s", address);
+        continue;
+      }
       addr6->sin6_scope_id = 0;
     } else
 #endif
@@ -27,23 +30,29 @@ void UDPComponent::setup() {
       auto *addr4 = (struct sockaddr_in *) &saddr;
       addr4->sin_family = AF_INET;
       addr4->sin_port = htons(this->broadcast_port_);
-      inet_aton(address, &addr4->sin_addr);
+      if (inet_aton(address, &addr4->sin_addr) == 0) {
+        ESP_LOGE(TAG, "Invalid IPv4 address: %s", address);
+        continue;
+      }
     }
 
     this->sockaddrs_.push_back(saddr);
   }
 
 #ifdef USE_UDP_IPV6
-  int socket_family = AF_INET6;
+  int socket_family = AF_INET;  // Default to IPv4
   bool has_ipv6 = false;
+  bool has_ipv4 = false;
   for (const auto &address : this->addresses_) {
     if (strchr(address, ':') != nullptr) {
       has_ipv6 = true;
-      break;
+    } else {
+      has_ipv4 = true;
     }
   }
-  if (!has_ipv6) {
-    socket_family = AF_INET;
+  
+  if (has_ipv6) {
+    socket_family = AF_INET6;
   }
 #else
   int socket_family = AF_INET;
@@ -51,7 +60,7 @@ void UDPComponent::setup() {
 
   // set up broadcast socket
   if (this->should_broadcast_) {
-    this->broadcast_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_IP);
+    this->broadcast_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_UDP);
     if (this->broadcast_socket_ == nullptr) {
       this->status_set_error(LOG_STR("Could not create socket"));
       this->mark_failed();
@@ -66,14 +75,20 @@ void UDPComponent::setup() {
 
 #ifdef USE_UDP_IPV6
     if (socket_family == AF_INET6) {
+      // For IPv6 dual-stack socket, set IPV6_V6ONLY to 0 to allow both IPv4 and IPv6
       int v6only = 0;
       err = this->broadcast_socket_->setsockopt(IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
       if (err != 0) {
+        ESP_LOGE(TAG, "Socket unable to set IPV6_V6ONLY: errno %d", errno);
         this->status_set_warning(LOG_STR("Socket unable to set IPV6_V6ONLY"));
+      } else {
+        ESP_LOGD(TAG, "IPv6 dual-stack socket enabled");
       }
-    } else
+    }
 #endif
-    {
+    
+    // Set broadcast option for IPv4
+    if (socket_family == AF_INET) {
       err = this->broadcast_socket_->setsockopt(SOL_SOCKET, SO_BROADCAST, &enable, sizeof(int));
       if (err != 0) {
         this->status_set_warning(LOG_STR("Socket unable to set broadcast"));
@@ -84,7 +99,7 @@ void UDPComponent::setup() {
   // create listening socket if we either want to subscribe to providers, or need to listen
   // for ping key broadcasts.
   if (this->should_listen_) {
-    this->listen_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_IP);
+    this->listen_socket_ = socket::socket(socket_family, SOCK_DGRAM, IPPROTO_UDP);
     if (this->listen_socket_ == nullptr) {
       this->status_set_error(LOG_STR("Could not create socket"));
       this->mark_failed();
@@ -110,6 +125,14 @@ void UDPComponent::setup() {
       server.sin6_family = AF_INET6;
       server.sin6_addr = in6addr_any;
       server.sin6_port = htons(this->listen_port_);
+      server.sin6_scope_id = 0;
+
+      // Set IPV6_V6ONLY to 0 for dual-stack
+      int v6only = 0;
+      err = this->listen_socket_->setsockopt(IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only));
+      if (err != 0) {
+        ESP_LOGW(TAG, "Unable to set IPV6_V6ONLY on listen socket: errno %d", errno);
+      }
 
       if (this->listen_address_.has_value()) {
         char addr_buf[network::IP_ADDRESS_BUFFER_SIZE];
@@ -118,16 +141,19 @@ void UDPComponent::setup() {
         // Check if it's IPv6 multicast
         if (strchr(addr_buf, ':') != nullptr) {
           struct ipv6_mreq mreq6 = {};
-          inet_pton(AF_INET6, addr_buf, &mreq6.ipv6mr_multiaddr);
-          mreq6.ipv6mr_interface = 0;  // Use default interface
-          memcpy(&server.sin6_addr, &mreq6.ipv6mr_multiaddr, sizeof(struct in6_addr));
-          ESP_LOGD(TAG, "Join IPv6 multicast %s", addr_buf);
-          err = this->listen_socket_->setsockopt(IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq6, sizeof(mreq6));
-          if (err < 0) {
-            ESP_LOGE(TAG, "Failed to set IPV6_JOIN_GROUP. Error %d", errno);
-            this->status_set_error(LOG_STR("Failed to set IPV6_JOIN_GROUP"));
-            this->mark_failed();
-            return;
+          if (inet_pton(AF_INET6, addr_buf, &mreq6.ipv6mr_multiaddr) == 1) {
+            mreq6.ipv6mr_interface = 0;  // Use default interface
+            memcpy(&server.sin6_addr, &mreq6.ipv6mr_multiaddr, sizeof(struct in6_addr));
+            ESP_LOGD(TAG, "Join IPv6 multicast %s", addr_buf);
+            err = this->listen_socket_->setsockopt(IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq6, sizeof(mreq6));
+            if (err < 0) {
+              ESP_LOGE(TAG, "Failed to set IPV6_JOIN_GROUP. Error %d", errno);
+              this->status_set_error(LOG_STR("Failed to set IPV6_JOIN_GROUP"));
+              this->mark_failed();
+              return;
+            }
+          } else {
+            ESP_LOGE(TAG, "Invalid IPv6 multicast address: %s", addr_buf);
           }
         }
       }
@@ -149,20 +175,20 @@ void UDPComponent::setup() {
       server.sin_port = htons(this->listen_port_);
 
       if (this->listen_address_.has_value()) {
-        // Only 16 bytes needed for IPv4, but use standard size for consistency
         char addr_buf[network::IP_ADDRESS_BUFFER_SIZE];
         this->listen_address_.value().str_to(addr_buf);
         struct ip_mreq imreq = {};
         imreq.imr_interface.s_addr = ESPHOME_INADDR_ANY;
-        inet_aton(addr_buf, &imreq.imr_multiaddr);
-        server.sin_addr.s_addr = imreq.imr_multiaddr.s_addr;
-        ESP_LOGD(TAG, "Join multicast %s", addr_buf);
-        err = this->listen_socket_->setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, &imreq, sizeof(imreq));
-        if (err < 0) {
-          ESP_LOGE(TAG, "Failed to set IP_ADD_MEMBERSHIP. Error %d", errno);
-          this->status_set_error(LOG_STR("Failed to set IP_ADD_MEMBERSHIP"));
-          this->mark_failed();
-          return;
+        if (inet_aton(addr_buf, &imreq.imr_multiaddr) != 0) {
+          server.sin_addr.s_addr = imreq.imr_multiaddr.s_addr;
+          ESP_LOGD(TAG, "Join multicast %s", addr_buf);
+          err = this->listen_socket_->setsockopt(IPPROTO_IP, IP_ADD_MEMBERSHIP, &imreq, sizeof(imreq));
+          if (err < 0) {
+            ESP_LOGE(TAG, "Failed to set IP_ADD_MEMBERSHIP. Error %d", errno);
+            this->status_set_error(LOG_STR("Failed to set IP_ADD_MEMBERSHIP"));
+            this->mark_failed();
+            return;
+          }
         }
       }
 
@@ -233,18 +259,23 @@ void UDPComponent::dump_config() {
 void UDPComponent::send_packet(const uint8_t *data, size_t size) {
 #if defined(USE_SOCKET_IMPL_BSD_SOCKETS) || defined(USE_SOCKET_IMPL_LWIP_SOCKETS)
   for (const auto &saddr : this->sockaddrs_) {
+    const struct sockaddr *sa = (const struct sockaddr *)&saddr;
     socklen_t addr_len;
+    
 #ifdef USE_UDP_IPV6
-    if (((struct sockaddr *)&saddr)->sa_family == AF_INET6) {
+    if (sa->sa_family == AF_INET6) {
       addr_len = sizeof(struct sockaddr_in6);
     } else
 #endif
     {
       addr_len = sizeof(struct sockaddr_in);
     }
-    auto result = this->broadcast_socket_->sendto(data, size, 0, (struct sockaddr *)&saddr, addr_len);
-    if (result < 0)
-      ESP_LOGW(TAG, "sendto() error %d", errno);
+    
+    auto result = this->broadcast_socket_->sendto(data, size, 0, sa, addr_len);
+    if (result < 0) {
+      ESP_LOGW(TAG, "sendto() error %d (errno: %d) for address family %d", 
+               result, errno, sa->sa_family);
+    }
   }
 #endif
 #ifdef USE_SOCKET_IMPL_LWIP_TCP
