@@ -12,8 +12,7 @@ from esphome.components.packet_transport import (
 )
 import esphome.config_validation as cv
 from esphome.const import CONF_DATA, CONF_ID, CONF_PORT, CONF_TRIGGER_ID
-from esphome.core import CORE, ID
-from esphome.cpp_generator import MockObj
+from esphome.core import ID
 from esphome.types import ConfigType
 
 CODEOWNERS = ["@clydebarrow"]
@@ -145,8 +144,6 @@ async def to_code(config):
 def validate_raw_data(value):
     if isinstance(value, str):
         return value.encode("utf-8")
-    if isinstance(value, str):
-        return value
     if isinstance(value, list):
         return cv.Schema([cv.hex_uint8_t])(value)
     raise cv.Invalid(
