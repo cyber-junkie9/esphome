@@ -13,8 +13,7 @@ void UDPTransport::setup() {
   PacketTransport::setup();
   if (!this->providers_.empty() || this->is_encrypted_()) {
     this->parent_->add_listener([this](std::span<const uint8_t> data) {
-      std::vector<uint8_t> vec(data.begin(), data.end());
-      this->process_(vec);
+      this->process_(std::vector<uint8_t>(data.begin(), data.end()));
     });
   }
 }
