@@ -13,7 +13,6 @@ from esphome.components.packet_transport import (
 import esphome.config_validation as cv
 from esphome.const import CONF_DATA, CONF_ID, CONF_PORT, CONF_TRIGGER_ID
 from esphome.core import ID
-from esphome.cpp_generator import MockObj
 from esphome.types import ConfigType
 
 CODEOWNERS = ["@clydebarrow"]
@@ -136,7 +135,6 @@ async def to_code(config):
         trigger = await automation.build_automation(
             trigger_id, trigger_argtype, on_receive
         )
-        cg.add(var.add_listener(trigger_lambda))
         cg.add(
             var.add_listener(
                 cg.RawExpression(
