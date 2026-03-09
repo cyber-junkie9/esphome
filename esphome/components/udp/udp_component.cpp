@@ -152,7 +152,8 @@ void UDPComponent::loop() {
         break;
       size_t packet_len = static_cast<size_t>(len);
       ESP_LOGV(TAG, "Received packet of length %zu", packet_len);
-      this->packet_listeners_.call(std::span<const uint8_t>(buf.data(), packet_len));
+      std::vector<uint8_t> data(buf.begin(), buf.begin() + packet_len);
+      this->packet_listeners_.call(data);
     }
   }
 }
